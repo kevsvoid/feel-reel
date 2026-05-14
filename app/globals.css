@@ -52,6 +52,7 @@ body::before {
   opacity: 0.4;
   mix-blend-mode: overlay;
   animation: grain 0.5s steps(1) infinite;
+  will-change: transform;
 }
 
 @keyframes grain {
