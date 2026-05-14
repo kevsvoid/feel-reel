@@ -54,11 +54,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Loading / not authed state
   if (loading || !user) return (
-    <div className="min-h-screen flex items-center justify-center bg-void">
-      <div className="w-6 h-6 rounded-full border-t-transparent animate-spin"
-        style={{ border: '2px solid var(--amber)' }} />
-    </div>
-  )
+  <div className="min-h-screen flex flex-col items-center justify-center bg-void gap-4">
+    <span
+      className="font-display text-2xl font-bold"
+      style={{ color: 'var(--amber)' }}
+    >
+      FeelReel
+    </span>
+    <div className="w-6 h-6 rounded-full border-t-transparent animate-spin"
+      style={{ border: '2px solid var(--amber)' }} />
+  </div>
+)
 
   const displayName = user.user_metadata?.display_name || user.email || 'Cinephile'
   const initials    = displayName.slice(0, 2).toUpperCase()
