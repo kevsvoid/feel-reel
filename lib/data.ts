@@ -8,19 +8,28 @@ export interface Movie {
   year: number
   mood: Mood[]
   genre: string
-  poster: string // emoji stand-in
+  genres: string[]          // array for multi-genre filtering
+  posterUrl: string | null  // TMDB poster URL — null = use placeholder
   description: string
-  rating: number
+  rating: number            // TMDB/critic rating (out of 10)
 }
 
 export interface LogEntry {
   id: string
+  movieId: string | null    // links to MOCK_MOVIES if picked from list
   movieName: string
-  rating: number
+  rating: number            // user score 0–100
   mood: Mood
   review: string
   date: string
 }
+
+// All distinct genres across the mock dataset
+export const GENRES = [
+  'Action', 'Animation', 'Comedy', 'Drama', 'Musical',
+  'Romance', 'Sci-Fi', 'Thriller', 'Adventure',
+] as const
+export type Genre = typeof GENRES[number]
 
 export const MOODS: { value: Mood; label: string; emoji: string; color: string }[] = [
   { value: 'happy',     label: 'Happy',     emoji: '☀️',  color: '#d4a853' },
@@ -35,21 +44,21 @@ export const MOODS: { value: Mood; label: string; emoji: string; color: string }
 ]
 
 export const MOCK_MOVIES: Movie[] = [
-  { id: '1',  title: 'Amélie',                  year: 2001, mood: ['happy','nostalgic','romantic'], genre: 'Romance/Comedy',  poster: '🎠', description: 'A whimsical Parisian tale of an imaginative woman who orchestrates the lives of those around her.',      rating: 8.3 },
-  { id: '2',  title: 'Blade Runner 2049',        year: 2017, mood: ['bored','inspired','anxious'],  genre: 'Sci-Fi',          poster: '🌆', description: 'A young blade runner discovers a secret that could plunge society into chaos.',                        rating: 8.0 },
-  { id: '3',  title: 'La La Land',               year: 2016, mood: ['romantic','sad','nostalgic'],  genre: 'Musical/Drama',   poster: '🌃', description: 'A jazz musician and an aspiring actress fall in love while pursuing their dreams in Los Angeles.',       rating: 8.0 },
-  { id: '4',  title: 'Mad Max: Fury Road',       year: 2015, mood: ['excited','angry','anxious'],   genre: 'Action',          poster: '🏜️', description: 'In a post-apocalyptic wasteland, a woman rebels against a tyrannical ruler.',                           rating: 8.1 },
-  { id: '5',  title: 'Eternal Sunshine',         year: 2004, mood: ['sad','romantic','nostalgic'],  genre: 'Drama/Sci-Fi',    poster: '🧠', description: 'A couple undergoes a medical procedure to erase each other from their memories.',                      rating: 8.3 },
-  { id: '6',  title: 'The Grand Budapest Hotel', year: 2014, mood: ['happy','excited','nostalgic'], genre: 'Comedy/Adventure', poster: '🏨', description: 'The adventures of a legendary hotel concierge and his protégé.',                                      rating: 8.1 },
-  { id: '7',  title: 'Requiem for a Dream',      year: 2000, mood: ['sad','anxious','angry'],       genre: 'Drama',           poster: '🪞', description: 'The drug-induced utopias of four Coney Island people are juxtaposed against their grim realities.',    rating: 8.3 },
-  { id: '8',  title: 'Spirited Away',            year: 2001, mood: ['inspired','nostalgic','happy'],genre: 'Animation',       poster: '🏮', description: 'A young girl wanders into a world ruled by gods, witches, and spirits.',                                rating: 8.6 },
-  { id: '9',  title: 'Whiplash',                 year: 2014, mood: ['inspired','angry','anxious'],  genre: 'Drama/Music',     poster: '🥁', description: 'A promising young drummer enrolls at a cutthroat music conservatory.',                                 rating: 8.5 },
-  { id: '10', title: 'Before Sunrise',           year: 1995, mood: ['romantic','happy','nostalgic'],genre: 'Romance/Drama',   poster: '🌅', description: 'A young man and woman meet on a train in Europe and spend one night walking through Vienna.',           rating: 8.1 },
-  { id: '11', title: 'Parasite',                 year: 2019, mood: ['anxious','excited','angry'],   genre: 'Thriller/Drama',  poster: '🏚️', description: 'Greed and class discrimination threaten a symbiotic relationship between two families.',                rating: 8.5 },
-  { id: '12', title: 'Cinema Paradiso',          year: 1988, mood: ['nostalgic','sad','romantic'],  genre: 'Drama',           poster: '📽️', description: 'A filmmaker recalls his childhood in a Sicilian village and his friendship with the local projectionist.', rating: 8.5 },
-  { id: '13', title: 'Interstellar',             year: 2014, mood: ['inspired','anxious','sad'],    genre: 'Sci-Fi',          poster: '🌌', description: 'A team of explorers travel through a wormhole in space to ensure humanity\'s survival.',                  rating: 8.6 },
-  { id: '14', title: 'Clueless',                 year: 1995, mood: ['happy','bored','romantic'],    genre: 'Comedy/Romance',  poster: '👗', description: 'A rich high school student tries to boost a new pupil\'s popularity while learning life lessons.',         rating: 7.1 },
-  { id: '15', title: 'Drive',                    year: 2011, mood: ['excited','romantic','bored'],  genre: 'Action/Drama',    poster: '🚗', description: 'A mysterious Hollywood stunt driver moonlights as a getaway driver.',                                    rating: 7.8 },
+  { id: '1',  title: 'Amélie',                  year: 2001, mood: ['happy','nostalgic','romantic'], genre: 'Romance / Comedy',   genres: ['Romance','Comedy'],         posterUrl: null, description: 'A whimsical Parisian tale of an imaginative woman who orchestrates the lives of those around her.',       rating: 8.3 },
+  { id: '2',  title: 'Blade Runner 2049',        year: 2017, mood: ['bored','inspired','anxious'],  genre: 'Sci-Fi',              genres: ['Sci-Fi','Drama'],            posterUrl: null, description: 'A young blade runner discovers a secret that could plunge society into chaos.',                         rating: 8.0 },
+  { id: '3',  title: 'La La Land',               year: 2016, mood: ['romantic','sad','nostalgic'],  genre: 'Musical / Drama',     genres: ['Musical','Drama','Romance'], posterUrl: null, description: 'A jazz musician and an aspiring actress fall in love while pursuing their dreams in Los Angeles.',        rating: 8.0 },
+  { id: '4',  title: 'Mad Max: Fury Road',       year: 2015, mood: ['excited','angry','anxious'],   genre: 'Action',              genres: ['Action'],                    posterUrl: null, description: 'In a post-apocalyptic wasteland, a woman rebels against a tyrannical ruler.',                            rating: 8.1 },
+  { id: '5',  title: 'Eternal Sunshine',         year: 2004, mood: ['sad','romantic','nostalgic'],  genre: 'Drama / Sci-Fi',      genres: ['Drama','Sci-Fi','Romance'],  posterUrl: null, description: 'A couple undergoes a medical procedure to erase each other from their memories.',                       rating: 8.3 },
+  { id: '6',  title: 'The Grand Budapest Hotel', year: 2014, mood: ['happy','excited','nostalgic'], genre: 'Comedy / Adventure',  genres: ['Comedy','Adventure'],        posterUrl: null, description: 'The adventures of a legendary hotel concierge and his young lobby boy.',                               rating: 8.1 },
+  { id: '7',  title: 'Requiem for a Dream',      year: 2000, mood: ['sad','anxious','angry'],       genre: 'Drama',               genres: ['Drama'],                     posterUrl: null, description: 'The drug-induced utopias of four Coney Island people are juxtaposed against their grim realities.',     rating: 8.3 },
+  { id: '8',  title: 'Spirited Away',            year: 2001, mood: ['inspired','nostalgic','happy'],genre: 'Animation',           genres: ['Animation','Adventure'],     posterUrl: null, description: 'A young girl wanders into a world ruled by gods, witches, and spirits.',                                 rating: 8.6 },
+  { id: '9',  title: 'Whiplash',                 year: 2014, mood: ['inspired','angry','anxious'],  genre: 'Drama / Music',       genres: ['Drama'],                     posterUrl: null, description: 'A promising young drummer enrolls at a cutthroat music conservatory.',                                  rating: 8.5 },
+  { id: '10', title: 'Before Sunrise',           year: 1995, mood: ['romantic','happy','nostalgic'],genre: 'Romance / Drama',     genres: ['Romance','Drama'],           posterUrl: null, description: 'A young man and woman meet on a train in Europe and spend one night walking through Vienna.',            rating: 8.1 },
+  { id: '11', title: 'Parasite',                 year: 2019, mood: ['anxious','excited','angry'],   genre: 'Thriller / Drama',    genres: ['Thriller','Drama'],          posterUrl: null, description: 'Greed and class discrimination threaten a symbiotic relationship between two families.',                 rating: 8.5 },
+  { id: '12', title: 'Cinema Paradiso',          year: 1988, mood: ['nostalgic','sad','romantic'],  genre: 'Drama',               genres: ['Drama','Romance'],           posterUrl: null, description: 'A filmmaker recalls his childhood in a Sicilian village and his friendship with the local projectionist.',rating: 8.5 },
+  { id: '13', title: 'Interstellar',             year: 2014, mood: ['inspired','anxious','sad'],    genre: 'Sci-Fi',              genres: ['Sci-Fi','Drama'],            posterUrl: null, description: 'A team of explorers travel through a wormhole in space to ensure humanity\'s survival.',                rating: 8.6 },
+  { id: '14', title: 'Clueless',                 year: 1995, mood: ['happy','bored','romantic'],    genre: 'Comedy / Romance',    genres: ['Comedy','Romance'],          posterUrl: null, description: 'A rich high school student tries to boost a new pupil\'s popularity while learning life lessons.',      rating: 7.1 },
+  { id: '15', title: 'Drive',                    year: 2011, mood: ['excited','romantic','bored'],  genre: 'Action / Drama',      genres: ['Action','Drama'],            posterUrl: null, description: 'A mysterious Hollywood stunt driver moonlights as a getaway driver.',                                     rating: 7.8 },
 ]
 
 // Keyword → mood mapping for simple emotion detection
