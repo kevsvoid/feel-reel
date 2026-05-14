@@ -165,10 +165,29 @@ body::before {
   border-top: 1px solid rgba(212,168,83,0.12);
 }
 
-/* Rating stars */
-.star { color: var(--silver-ghost); cursor: pointer; transition: color 0.15s; }
-.star.active { color: var(--amber); }
-.star:hover { color: var(--amber-glow); }
+/* Rating slider thumb */
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: 2px solid var(--void);
+  box-shadow: 0 0 6px rgba(212,168,83,0.5);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 12px rgba(212,168,83,0.7);
+}
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: 2px solid var(--void);
+  cursor: pointer;
+}
 
 /* Mood tag */
 .mood-tag {
