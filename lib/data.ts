@@ -1,30 +1,21 @@
 // lib/data.ts
+import { supabase } from '@/lib/supabase'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Mood = 'happy' | 'sad' | 'anxious' | 'excited' | 'nostalgic' | 'angry' | 'romantic' | 'bored' | 'inspired'
 
-export interface Movie {
-  id: string
-  title: string
-  year: number
-  mood: Mood[]
-  genre: string
-  genres: string[]          // array for multi-genre filtering
-  posterUrl: string | null  // TMDB poster URL — null = use placeholder
-  description: string
-  rating: number            // TMDB/critic rating (out of 10)
-}
-
 export interface LogEntry {
   id: string
-  movieId: string | null    // links to MOCK_MOVIES if picked from list
+  movieId: string | null
   movieName: string
-  rating: number            // user score 0–100
+  posterUrl: string | null  // stored from TMDB
+  rating: number            // 0–100
   mood: Mood
   review: string
-  date: string
+  date: string              // display string e.g. "May 12, 2025"
 }
 
-// All distinct genres across the mock dataset
 export const GENRES = [
   'Action', 'Animation', 'Comedy', 'Drama', 'Musical',
   'Romance', 'Sci-Fi', 'Thriller', 'Adventure',
@@ -43,76 +34,196 @@ export const MOODS: { value: Mood; label: string; emoji: string; color: string }
   { value: 'inspired',  label: 'Inspired',  emoji: '✨',  color: '#27ae60' },
 ]
 
-export const MOCK_MOVIES: Movie[] = [
-  { id: '1',  title: 'Amélie',                  year: 2001, mood: ['happy','nostalgic','romantic'], genre: 'Romance / Comedy',   genres: ['Romance','Comedy'],         posterUrl: null, description: 'A whimsical Parisian tale of an imaginative woman who orchestrates the lives of those around her.',       rating: 8.3 },
-  { id: '2',  title: 'Blade Runner 2049',        year: 2017, mood: ['bored','inspired','anxious'],  genre: 'Sci-Fi',              genres: ['Sci-Fi','Drama'],            posterUrl: null, description: 'A young blade runner discovers a secret that could plunge society into chaos.',                         rating: 8.0 },
-  { id: '3',  title: 'La La Land',               year: 2016, mood: ['romantic','sad','nostalgic'],  genre: 'Musical / Drama',     genres: ['Musical','Drama','Romance'], posterUrl: null, description: 'A jazz musician and an aspiring actress fall in love while pursuing their dreams in Los Angeles.',        rating: 8.0 },
-  { id: '4',  title: 'Mad Max: Fury Road',       year: 2015, mood: ['excited','angry','anxious'],   genre: 'Action',              genres: ['Action'],                    posterUrl: null, description: 'In a post-apocalyptic wasteland, a woman rebels against a tyrannical ruler.',                            rating: 8.1 },
-  { id: '5',  title: 'Eternal Sunshine',         year: 2004, mood: ['sad','romantic','nostalgic'],  genre: 'Drama / Sci-Fi',      genres: ['Drama','Sci-Fi','Romance'],  posterUrl: null, description: 'A couple undergoes a medical procedure to erase each other from their memories.',                       rating: 8.3 },
-  { id: '6',  title: 'The Grand Budapest Hotel', year: 2014, mood: ['happy','excited','nostalgic'], genre: 'Comedy / Adventure',  genres: ['Comedy','Adventure'],        posterUrl: null, description: 'The adventures of a legendary hotel concierge and his young lobby boy.',                               rating: 8.1 },
-  { id: '7',  title: 'Requiem for a Dream',      year: 2000, mood: ['sad','anxious','angry'],       genre: 'Drama',               genres: ['Drama'],                     posterUrl: null, description: 'The drug-induced utopias of four Coney Island people are juxtaposed against their grim realities.',     rating: 8.3 },
-  { id: '8',  title: 'Spirited Away',            year: 2001, mood: ['inspired','nostalgic','happy'],genre: 'Animation',           genres: ['Animation','Adventure'],     posterUrl: null, description: 'A young girl wanders into a world ruled by gods, witches, and spirits.',                                 rating: 8.6 },
-  { id: '9',  title: 'Whiplash',                 year: 2014, mood: ['inspired','angry','anxious'],  genre: 'Drama / Music',       genres: ['Drama'],                     posterUrl: null, description: 'A promising young drummer enrolls at a cutthroat music conservatory.',                                  rating: 8.5 },
-  { id: '10', title: 'Before Sunrise',           year: 1995, mood: ['romantic','happy','nostalgic'],genre: 'Romance / Drama',     genres: ['Romance','Drama'],           posterUrl: null, description: 'A young man and woman meet on a train in Europe and spend one night walking through Vienna.',            rating: 8.1 },
-  { id: '11', title: 'Parasite',                 year: 2019, mood: ['anxious','excited','angry'],   genre: 'Thriller / Drama',    genres: ['Thriller','Drama'],          posterUrl: null, description: 'Greed and class discrimination threaten a symbiotic relationship between two families.',                 rating: 8.5 },
-  { id: '12', title: 'Cinema Paradiso',          year: 1988, mood: ['nostalgic','sad','romantic'],  genre: 'Drama',               genres: ['Drama','Romance'],           posterUrl: null, description: 'A filmmaker recalls his childhood in a Sicilian village and his friendship with the local projectionist.',rating: 8.5 },
-  { id: '13', title: 'Interstellar',             year: 2014, mood: ['inspired','anxious','sad'],    genre: 'Sci-Fi',              genres: ['Sci-Fi','Drama'],            posterUrl: null, description: 'A team of explorers travel through a wormhole in space to ensure humanity\'s survival.',                rating: 8.6 },
-  { id: '14', title: 'Clueless',                 year: 1995, mood: ['happy','bored','romantic'],    genre: 'Comedy / Romance',    genres: ['Comedy','Romance'],          posterUrl: null, description: 'A rich high school student tries to boost a new pupil\'s popularity while learning life lessons.',      rating: 7.1 },
-  { id: '15', title: 'Drive',                    year: 2011, mood: ['excited','romantic','bored'],  genre: 'Action / Drama',      genres: ['Action','Drama'],            posterUrl: null, description: 'A mysterious Hollywood stunt driver moonlights as a getaway driver.',                                     rating: 7.8 },
-]
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+// RLS on the DB ensures every query is automatically scoped to the signed-in user —
+// no need to pass user_id manually anywhere in the UI.
 
-// Keyword → mood mapping for simple emotion detection
-const MOOD_KEYWORDS: Record<Mood, string[]> = {
-  happy:     ['happy','joy','great','good','wonderful','excited','amazing','cheerful','elated','fun'],
-  sad:       ['sad','down','depressed','crying','unhappy','blue','lonely','heartbroken','gloomy','miserable'],
-  anxious:   ['anxious','stressed','nervous','worried','tense','overwhelmed','panic','uneasy','restless'],
-  excited:   ['excited','pumped','hyped','thrilled','energetic','can\'t wait','stoked','fired up'],
-  nostalgic: ['nostalgic','miss','remember','childhood','old','past','memories','vintage','throwback'],
-  angry:     ['angry','mad','furious','annoyed','frustrated','irritated','rage','pissed','hate'],
-  romantic:  ['romantic','love','crush','date','partner','relationship','affection','heart','miss you'],
-  bored:     ['bored','boring','nothing','lazy','meh','whatever','dull','unmotivated','slow'],
-  inspired:  ['inspired','motivated','creative','productive','driven','ambitious','energized','focused'],
-}
+/** Fetch all logs for the current user, newest first. */
+export async function getLogs(): Promise<LogEntry[]> {
+  const { data, error } = await supabase
+    .from('logs')
+    .select('*')
+    .order('created_at', { ascending: false })
 
-export function detectEmotion(text: string): Mood {
-  const lower = text.toLowerCase()
-  const scores: Record<Mood, number> = {} as Record<Mood, number>
-  for (const [mood, keywords] of Object.entries(MOOD_KEYWORDS)) {
-    scores[mood as Mood] = keywords.filter(k => lower.includes(k)).length
+  if (error) {
+    console.error('getLogs:', error.message)
+    return []
   }
-  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1])
-  return (sorted[0][1] > 0 ? sorted[0][0] : 'bored') as Mood
+
+  return (data ?? []).map(row => ({
+    id:        row.id,
+    movieId:   row.movie_id,
+    movieName: row.movie_name,
+    posterUrl: row.poster_url ?? null,
+    rating:    row.rating,
+    mood:      row.mood as Mood,
+    review:    row.review ?? '',
+    date:      new Date(row.created_at).toLocaleDateString('en-US', {
+                 month: 'short', day: 'numeric', year: 'numeric'
+               }),
+  }))
 }
 
-export function getMoviesByMood(mood: Mood, limit = 3): Movie[] {
-  return MOCK_MOVIES.filter(m => m.mood.includes(mood)).slice(0, limit)
+/** Add a new log. Returns the saved entry or null on error. */
+export async function addLog(entry: Omit<LogEntry, 'id' | 'date'>): Promise<LogEntry | null> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+
+  const { data, error } = await supabase
+    .from('logs')
+    .insert({
+      user_id:    session.user.id,
+      movie_id:   entry.movieId,
+      movie_name: entry.movieName,
+      poster_url: entry.posterUrl ?? null,
+      rating:     entry.rating,
+      mood:       entry.mood,
+      review:     entry.review || null,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('addLog:', error.message)
+    return null
+  }
+
+  return {
+    id:        data.id,
+    movieId:   data.movie_id,
+    movieName: data.movie_name,
+    posterUrl: data.poster_url ?? null,
+    rating:    data.rating,
+    mood:      data.mood as Mood,
+    review:    data.review ?? '',
+    date:      new Date(data.created_at).toLocaleDateString('en-US', {
+                 month: 'short', day: 'numeric', year: 'numeric'
+               }),
+  }
 }
 
-// localStorage helpers
-export const storage = {
-  getLogs: (): LogEntry[] => {
-    if (typeof window === 'undefined') return []
-    return JSON.parse(localStorage.getItem('feelreel_logs') || '[]')
-  },
-  saveLogs: (logs: LogEntry[]) => {
-    localStorage.setItem('feelreel_logs', JSON.stringify(logs))
-  },
-  getWatchlist: (): string[] => {
-    if (typeof window === 'undefined') return []
-    return JSON.parse(localStorage.getItem('feelreel_watchlist') || '[]')
-  },
-  saveWatchlist: (ids: string[]) => {
-    localStorage.setItem('feelreel_watchlist', JSON.stringify(ids))
-  },
-  getUser: () => {
-    if (typeof window === 'undefined') return null
-    const u = localStorage.getItem('feelreel_user')
-    return u ? JSON.parse(u) : null
-  },
-  setUser: (user: { email: string }) => {
-    localStorage.setItem('feelreel_user', JSON.stringify(user))
-  },
-  clearUser: () => {
-    localStorage.removeItem('feelreel_user')
-  },
+/** Find an existing log for a specific movie_id (returns null if none). */
+export async function getLogForMovie(movieId: string): Promise<LogEntry | null> {
+  const { data, error } = await supabase
+    .from('logs')
+    .select('*')
+    .eq('movie_id', movieId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  return {
+    id:        data.id,
+    movieId:   data.movie_id,
+    movieName: data.movie_name,
+    posterUrl: data.poster_url ?? null,
+    rating:    data.rating,
+    mood:      data.mood as Mood,
+    review:    data.review ?? '',
+    date:      new Date(data.created_at).toLocaleDateString('en-US', {
+                 month: 'short', day: 'numeric', year: 'numeric'
+               }),
+  }
+}
+
+/** Update an existing log row in place (no new row created). */
+export async function updateLog(
+  id: string,
+  patch: { rating: number; mood: Mood; review: string }
+): Promise<LogEntry | null> {
+  const { data, error } = await supabase
+    .from('logs')
+    .update({
+      rating: patch.rating,
+      mood:   patch.mood,
+      review: patch.review || null,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('updateLog:', error.message)
+    return null
+  }
+
+  return {
+    id:        data.id,
+    movieId:   data.movie_id,
+    movieName: data.movie_name,
+    posterUrl: data.poster_url ?? null,
+    rating:    data.rating,
+    mood:      data.mood as Mood,
+    review:    data.review ?? '',
+    date:      new Date(data.created_at).toLocaleDateString('en-US', {
+                 month: 'short', day: 'numeric', year: 'numeric'
+               }),
+  }
+}
+
+/** Delete a log by its UUID. */
+export async function deleteLog(id: string): Promise<boolean> {
+  const { error } = await supabase.from('logs').delete().eq('id', id)
+  if (error) {
+    console.error('deleteLog:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Fetch the current user's watchlist as an array of movie_id strings. */
+export async function getWatchlist(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('watchlist')
+    .select('movie_id')
+
+  if (error) {
+    console.error('getWatchlist:', error.message)
+    return []
+  }
+  return (data ?? []).map(r => r.movie_id)
+}
+
+/** Add a TMDB movie to the watchlist. Silently ignores duplicates (unique constraint). */
+export async function addToWatchlist(movie: {
+  id: string
+  title: string
+  posterUrl: string | null
+}): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return false
+
+  const { error } = await supabase
+    .from('watchlist')
+    .upsert(
+      {
+        user_id:    session.user.id,
+        movie_id:   movie.id,
+        movie_name: movie.title,
+        poster_url: movie.posterUrl,
+      },
+      { onConflict: 'user_id,movie_id', ignoreDuplicates: true }
+    )
+
+  if (error) {
+    console.error('addToWatchlist:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Remove a movie from the watchlist by movie_id string. */
+export async function removeFromWatchlist(movieId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('watchlist')
+    .delete()
+    .eq('movie_id', movieId)
+
+  if (error) {
+    console.error('removeFromWatchlist:', error.message)
+    return false
+  }
+  return true
 }
