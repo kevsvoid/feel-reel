@@ -1,28 +1,125 @@
 'use client'
 import { useState } from 'react'
 import AppShell from '@/components/AppShell'
-import MovieCard from '@/components/MovieCard'
 import QuickLog from '@/components/QuickLog'
-import { detectEmotion, getMoviesByMood, MOODS, Mood, Movie } from '@/lib/data'
-import { Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { MOODS, Mood } from '@/lib/data'
+import { getMoviesByMoodFromTMDB, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
+import { Sparkles, ChevronDown, ChevronUp, ImageOff, RefreshCw, AlertTriangle } from 'lucide-react'
+
+function TMDBMovieCard({ movie }: { movie: TMDBMovie }) {
+  const [imgErr, setImgErr] = useState(false)
+  const poster = getPosterUrl(movie.poster_path, 'w185')
+  const score  = tmdbRatingTo100(movie.vote_average)
+  const year   = movie.release_date?.split('-')[0]
+  const scoreColor = score < 50 ? '#e74c3c' : score < 65 ? '#d4a853' : score < 80 ? '#f0c060' : '#27ae60'
+
+  return (
+    <div className="cin-card rounded-xl p-4 flex gap-3">
+      {poster && !imgErr ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={poster} alt={movie.title} onError={() => setImgErr(true)}
+          className="flex-shrink-0 rounded-lg object-cover"
+          style={{ width: 64, height: 92, border: '1px solid rgba(212,168,83,0.15)' }} />
+      ) : (
+        <div className="flex-shrink-0 rounded-lg flex items-center justify-center"
+          style={{ width: 64, height: 92, background: '#1c1c1c', border: '1px solid rgba(212,168,83,0.15)' }}>
+          <ImageOff size={18} style={{ color: 'rgba(212,168,83,0.3)' }} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-display font-bold text-sm leading-tight" style={{ color: 'var(--silver)' }}>
+            {movie.title}
+          </h3>
+          <span className="flex-shrink-0 font-mono text-xs font-bold px-1.5 py-0.5 rounded"
+            style={{ background: `${scoreColor}18`, color: scoreColor, border: `1px solid ${scoreColor}30` }}>
+            {score}/100
+          </span>
+        </div>
+        {year && <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--silver-ghost)' }}>{year}</p>}
+        <p className="text-xs leading-relaxed mt-2 line-clamp-3" style={{ color: 'var(--silver-dim)' }}>
+          {movie.overview}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
-  const [input, setInput] = useState('')
-  const [detectedMood, setDetectedMood] = useState<Mood | null>(null)
-  const [recommendations, setRecommendations] = useState<Movie[]>([])
-  const [analyzing, setAnalyzing] = useState(false)
-  const [showQuickLog, setShowQuickLog] = useState(false)
+  const [input, setInput]                     = useState('')
+  const [detectedMood, setDetectedMood]       = useState<Mood | null>(null)
+  const [hfLabel, setHfLabel]                 = useState<string | null>(null)
+  const [hfConfidence, setHfConfidence]       = useState<number | null>(null)
+  const [usedFallback, setUsedFallback]       = useState(false)
+  const [recommendations, setRecommendations] = useState<TMDBMovie[]>([])
+  const [analyzing, setAnalyzing]             = useState(false)
+  const [refreshing, setRefreshing]           = useState(false)
+  const [refreshSeed, setRefreshSeed]         = useState(0)
+  const [showQuickLog, setShowQuickLog]       = useState(false)
+  const [error, setError]                     = useState<string | null>(null)
 
-  function analyze() {
-    if (!input.trim()) return
+  async function fetchRecs(mood: Mood, seed: number) {
+    const movies = await getMoviesByMoodFromTMDB(mood, 3, seed)
+    setRecommendations(movies)
+  }
+
+  async function analyze() {
+    if (!input.trim() || analyzing) return
     setAnalyzing(true)
-    setTimeout(() => {
-      const mood = detectEmotion(input)
-      const movies = getMoviesByMood(mood, 3)
+    setError(null)
+
+    try {
+      const tryFetch = () => fetch('/api/emotion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: input }),
+      })
+
+      let res = await tryFetch()
+
+      // Model warming up — retry once after 3 s
+      if (res.status === 503) {
+        await new Promise(r => setTimeout(r, 3000))
+        res = await tryFetch()
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `Error ${res.status}`)
+      }
+
+      const data = await res.json()
+      const mood = data.mood as Mood
       setDetectedMood(mood)
-      setRecommendations(movies)
+      setHfLabel(data.hfLabel)
+      setHfConfidence(Math.round(data.score * 100))
+      setUsedFallback(data.fallback ?? false)
+      setRefreshSeed(0)
+      await fetchRecs(mood, 0)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
       setAnalyzing(false)
-    }, 900)
+    }
+  }
+
+  async function handleRefresh() {
+    if (!detectedMood || refreshing) return
+    setRefreshing(true)
+    const next = refreshSeed + 1
+    setRefreshSeed(next)
+    await fetchRecs(detectedMood, next)
+    setRefreshing(false)
+  }
+
+  function pickMood(mood: Mood) {
+    setDetectedMood(mood)
+    setHfLabel(null)
+    setHfConfidence(null)
+    setUsedFallback(false)
+    setRefreshSeed(0)
+    setRecommendations([])
+    getMoviesByMoodFromTMDB(mood, 3, 0).then(setRecommendations)
   }
 
   const moodData = detectedMood ? MOODS.find(m => m.value === detectedMood) : null
@@ -41,9 +138,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Emotion input */}
+          {/* Left: Emotion input + results */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Emotion input card */}
             <div className="cin-card rounded-xl p-6 fade-up-1">
               <h2 className="font-display text-lg font-semibold mb-4" style={{ color: 'var(--silver)' }}>
                 Tell me how you feel
@@ -51,6 +147,7 @@ export default function DashboardPage() {
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) analyze() }}
                 placeholder="I'm feeling restless and nostalgic, like I want to cry a little but also feel hopeful..."
                 rows={4}
                 className="cin-input w-full px-4 py-3 rounded-lg text-sm resize-none mb-4"
@@ -60,41 +157,76 @@ export default function DashboardPage() {
                 disabled={!input.trim() || analyzing}
                 className={`cin-btn px-6 py-2.5 rounded-lg flex items-center gap-2 ${!input.trim() || analyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {analyzing ? (
-                  <span className="w-3.5 h-3.5 border-2 border-void border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Sparkles size={14} />
-                )}
+                {analyzing
+                  ? <span className="w-3.5 h-3.5 border-2 border-void border-t-transparent rounded-full animate-spin" />
+                  : <Sparkles size={14} />}
                 Analyze Emotion
               </button>
+              {error && (
+                <p className="text-xs font-mono mt-3 px-3 py-2 rounded-lg"
+                  style={{ color: '#e74c3c', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.2)' }}>
+                  {error}
+                </p>
+              )}
             </div>
 
             {/* Results */}
             {detectedMood && moodData && (
               <div className="space-y-4 fade-up">
+                {/* Mood badge + refresh */}
                 <div className="flex items-center gap-3">
                   <div className="px-4 py-2 rounded-full text-sm font-mono font-medium flex items-center gap-2"
                     style={{ background: `${moodData.color}20`, color: moodData.color, border: `1px solid ${moodData.color}40` }}>
                     <span className="text-lg">{moodData.emoji}</span>
                     Detected: <strong>{moodData.label}</strong>
+                    {hfLabel && hfConfidence !== null && (
+                      <span style={{ opacity: 0.55, fontSize: 11 }}>· {hfLabel} {hfConfidence}%</span>
+                    )}
                   </div>
                   <hr className="reel-divider flex-1" />
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing || recommendations.length === 0}
+                    title="Refresh recommendations (same mood)"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cin-btn-ghost"
+                    style={{ opacity: refreshing ? 0.5 : 1 }}
+                  >
+                    <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                    Refresh
+                  </button>
                 </div>
 
+                {/* Fallback notice */}
+                {usedFallback && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono"
+                    style={{ background: 'rgba(212,168,83,0.06)', color: 'var(--silver-ghost)', border: '1px solid rgba(212,168,83,0.12)' }}>
+                    <AlertTriangle size={11} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+                    AI model offline — using keyword detection instead
+                  </div>
+                )}
+
                 <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>
-                  Recommended for your current mood
+                  Recommended for your current mood — from TMDB
                 </p>
 
-                {recommendations.map((movie, i) => (
-                  <div key={movie.id} style={{ animationDelay: `${i * 0.1}s` }} className="fade-up">
-                    <MovieCard movie={movie} />
+                {recommendations.length === 0 ? (
+                  <div className="cin-card rounded-xl p-8 text-center">
+                    <div className="w-5 h-5 rounded-full border-t-transparent animate-spin mx-auto mb-3"
+                      style={{ border: '2px solid var(--amber)' }} />
+                    <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>
+                      Loading recommendations…
+                    </p>
+                  </div>
+                ) : recommendations.map((movie, i) => (
+                  <div key={`${movie.id}-${refreshSeed}`} style={{ animationDelay: `${i * 0.08}s` }} className="fade-up">
+                    <TMDBMovieCard movie={movie} />
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Right: Quick log */}
+          {/* Right: Quick log + mood palette */}
           <div className="space-y-4 fade-up-2">
             <div className="cin-card rounded-xl overflow-hidden">
               <button
@@ -105,7 +237,9 @@ export default function DashboardPage() {
                   <h3 className="font-display font-semibold text-sm" style={{ color: 'var(--silver)' }}>Quick Log</h3>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--silver-ghost)' }}>Log a movie you watched</p>
                 </div>
-                {showQuickLog ? <ChevronUp size={16} style={{ color: 'var(--silver-ghost)' }} /> : <ChevronDown size={16} style={{ color: 'var(--silver-ghost)' }} />}
+                {showQuickLog
+                  ? <ChevronUp size={16} style={{ color: 'var(--silver-ghost)' }} />
+                  : <ChevronDown size={16} style={{ color: 'var(--silver-ghost)' }} />}
               </button>
               {showQuickLog && (
                 <div className="px-5 pb-5 border-t" style={{ borderColor: 'rgba(212,168,83,0.1)' }}>
@@ -123,17 +257,28 @@ export default function DashboardPage() {
                 {MOODS.map(m => (
                   <button
                     key={m.value}
-                    onClick={() => {
-                      setDetectedMood(m.value)
-                      setRecommendations(getMoviesByMood(m.value, 3))
-                    }}
+                    onClick={() => pickMood(m.value)}
                     className="flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all hover:bg-white/5"
+                    style={detectedMood === m.value
+                      ? { background: `${m.color}15`, outline: `1px solid ${m.color}40` }
+                      : {}}
                   >
                     <span className="text-xl">{m.emoji}</span>
                     <span className="text-xs font-mono capitalize" style={{ color: m.color }}>{m.label}</span>
                   </button>
                 ))}
               </div>
+              {detectedMood && (
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-mono transition-all cin-btn-ghost"
+                  style={{ opacity: refreshing ? 0.5 : 1 }}
+                >
+                  <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+                  Different picks
+                </button>
+              )}
             </div>
           </div>
         </div>

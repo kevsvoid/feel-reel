@@ -1,10 +1,11 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
-import { Mood, MOODS, LogEntry, MOCK_MOVIES, Movie, storage } from '@/lib/data'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Mood, MOODS, addLog } from '@/lib/data'
+import { searchMovies, getPosterUrl, TMDBMovie } from '@/lib/tmdb'
 import RatingSlider from '@/components/RatingSlider'
-import { Search, ChevronDown, ImageOff } from 'lucide-react'
+import { Search, ChevronDown, ImageOff, Loader2 } from 'lucide-react'
 
-function PosterThumb({ url, title }: { url: string | null; title: string }) {
+function PosterThumb({ url }: { url: string | null }) {
   const [err, setErr] = useState(false)
   if (!url || err) {
     return (
@@ -15,24 +16,25 @@ function PosterThumb({ url, title }: { url: string | null; title: string }) {
     )
   }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url} alt={title} onError={() => setErr(true)}
+  return <img src={url} alt="" onError={() => setErr(true)}
     className="flex-shrink-0 rounded object-cover" style={{ width: 28, height: 40 }} />
 }
 
 export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
-  const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null)
-  const [rating, setRating] = useState(0)
-  const [mood, setMood] = useState<Mood>('happy')
-  const [review, setReview] = useState('')
-  const [saved, setSaved] = useState(false)
-  const dropRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery]               = useState('')
+  const [open, setOpen]                 = useState(false)
+  const [results, setResults]           = useState<TMDBMovie[]>([])
+  const [searching, setSearching]       = useState(false)
+  const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null)
+  const [rating, setRating]             = useState(0)
+  const [mood, setMood]                 = useState<Mood>('happy')
+  const [review, setReview]             = useState('')
+  const [saved, setSaved]               = useState(false)
+  const [saving, setSaving]             = useState(false)
+  const dropRef  = useRef<HTMLDivElement>(null)
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const suggestions = query.length > 0
-    ? MOCK_MOVIES.filter(m => m.title.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
-    : MOCK_MOVIES.slice(0, 6)
-
+  // Close dropdown on outside click
   useEffect(() => {
     function handle(e: MouseEvent) {
       if (dropRef.current && !dropRef.current.contains(e.target as Node)) setOpen(false)
@@ -41,29 +43,53 @@ export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
-  function selectMovie(m: Movie) {
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) { setResults([]); return }
+    setSearching(true)
+    const data = await searchMovies(q)
+    setResults(data.slice(0, 7))
+    setSearching(false)
+  }, [])
+
+  function handleQueryChange(val: string) {
+    setQuery(val)
+    setSelectedMovie(null)
+    setOpen(true)
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => doSearch(val), 350)
+  }
+
+  function selectMovie(m: TMDBMovie) {
     setSelectedMovie(m)
     setQuery(m.title)
     setOpen(false)
   }
 
-  function handleSave() {
-    if (!selectedMovie) return
-    const entry: LogEntry = {
-      id: Date.now().toString(),
-      movieId: selectedMovie.id,
+  async function handleSave() {
+    if (!selectedMovie || saving) return
+    setSaving(true)
+    const year = selectedMovie.release_date?.split('-')[0] ?? ''
+    const posterUrl = getPosterUrl(selectedMovie.poster_path)
+
+    const result = await addLog({
+      movieId:   String(selectedMovie.id),
       movieName: selectedMovie.title,
+      posterUrl: posterUrl,
       rating,
       mood,
       review: review.trim(),
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    }
-    const logs = storage.getLogs()
-    storage.saveLogs([entry, ...logs])
+    })
+
+    setSaving(false)
+    if (!result) return
+
     setSaved(true)
     setQuery(''); setSelectedMovie(null); setRating(0); setMood('happy'); setReview('')
     setTimeout(() => { setSaved(false); onSaved?.() }, 1500)
+    void year // suppress lint
   }
+
+  const year = selectedMovie?.release_date?.split('-')[0]
 
   return (
     <div className="space-y-5">
@@ -71,48 +97,55 @@ export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
       {/* Movie search */}
       <div>
         <label className="block text-xs uppercase tracking-widest mb-2 font-mono" style={{ color: 'var(--silver-ghost)' }}>
-          Select Movie
+          Search Movie
         </label>
         <div className="relative" ref={dropRef}>
-          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--silver-ghost)' }} />
+          {searching
+            ? <Loader2 size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 animate-spin pointer-events-none" style={{ color: 'var(--amber)' }} />
+            : <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--silver-ghost)' }} />
+          }
           <input
             value={query}
-            onChange={e => { setQuery(e.target.value); setOpen(true); setSelectedMovie(null) }}
-            onFocus={() => setOpen(true)}
-            placeholder="Search from movie list..."
+            onChange={e => handleQueryChange(e.target.value)}
+            onFocus={() => { setOpen(true); if (query && !results.length) doSearch(query) }}
+            placeholder="Search any movie…"
             className="cin-input w-full pl-9 pr-9 py-2.5 rounded-lg text-sm"
           />
           <ChevronDown size={13} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--silver-ghost)' }} />
 
-          {open && (
+          {open && (results.length > 0 || searching) && (
             <div className="absolute top-full left-0 right-0 mt-1 rounded-lg overflow-hidden z-50 shadow-2xl"
-              style={{ background: 'var(--frame)', border: '1px solid rgba(212,168,83,0.2)' }}>
-              {suggestions.length === 0 ? (
-                <div className="px-4 py-3 text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>No movies found</div>
-              ) : suggestions.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => selectMovie(m)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
-                >
-                  <PosterThumb url={m.posterUrl} title={m.title} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-display font-semibold truncate" style={{ color: 'var(--silver)' }}>{m.title}</p>
-                    <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>{m.year} · {m.genre}</p>
-                  </div>
-                </button>
-              ))}
+              style={{ background: 'var(--frame)', border: '1px solid rgba(212,168,83,0.2)', maxHeight: 300, overflowY: 'auto' }}>
+              {results.map(m => {
+                const yr = m.release_date?.split('-')[0]
+                const poster = getPosterUrl(m.poster_path, 'w92')
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => selectMovie(m)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                  >
+                    <PosterThumb url={poster} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-display font-semibold truncate" style={{ color: 'var(--silver)' }}>{m.title}</p>
+                      <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>
+                        {yr}{yr && m.vote_average ? ' · ' : ''}{m.vote_average ? `${Math.round(m.vote_average * 10)}/100` : ''}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
         {selectedMovie && (
           <p className="text-xs mt-1.5 font-mono" style={{ color: 'var(--amber)' }}>
-            ✓ {selectedMovie.title} ({selectedMovie.year})
+            ✓ {selectedMovie.title}{year ? ` (${year})` : ''}
           </p>
         )}
       </div>
 
-      {/* Rating slider */}
+      {/* Rating */}
       <div>
         <label className="block text-xs uppercase tracking-widest mb-3 font-mono" style={{ color: 'var(--silver-ghost)' }}>
           Your Score
@@ -157,10 +190,15 @@ export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
 
       <button
         onClick={handleSave}
-        disabled={!selectedMovie}
-        className={`cin-btn w-full py-2.5 rounded-lg transition-all ${!selectedMovie ? 'opacity-40 cursor-not-allowed' : ''}`}
+        disabled={!selectedMovie || saving}
+        className={`cin-btn w-full py-2.5 rounded-lg transition-all ${!selectedMovie || saving ? 'opacity-40 cursor-not-allowed' : ''}`}
       >
-        {saved ? '✓ Saved to Log' : 'Save Log'}
+        {saving ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="w-3.5 h-3.5 border-2 border-void border-t-transparent rounded-full animate-spin" />
+            Saving…
+          </span>
+        ) : saved ? '✓ Saved to Log' : 'Save Log'}
       </button>
     </div>
   )
