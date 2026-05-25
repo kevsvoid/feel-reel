@@ -148,7 +148,7 @@ export default function DashboardPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) analyze() }}
-                placeholder="I'm feeling restless and nostalgic, like I want to cry a little but also feel hopeful..."
+                placeholder="I'm feeling really down and empty, like nothing could cheer me up right now..."
                 rows={4}
                 className="cin-input w-full px-4 py-3 rounded-lg text-sm resize-none mb-4"
               />
