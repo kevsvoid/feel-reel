@@ -2,9 +2,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import AppShell from '@/components/AppShell'
 import RatingSlider from '@/components/RatingSlider'
-import { MOODS, GENRES, Mood, Genre } from '@/lib/data'
+import { MOODS, Mood } from '@/lib/data'
 import { getLogs, addLog, updateLog, LogEntry } from '@/lib/data'
-import { discoverMovies, searchMovies, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
+import { getMoviesByMoodWithSynopsisFilter, searchMovies, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
 import { Search, BookmarkX, SlidersHorizontal, X, RefreshCw, ImageOff, PenLine, CheckCircle2, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -144,7 +144,7 @@ export default function WatchlistPage() {
   const [tab, setTab]                     = useState<Tab>('all')
   const [searchText, setSearchText]       = useState('')
   const [selectedMood, setSelectedMood]   = useState<Mood | 'all'>('all')
-  const [selectedGenre, setSelectedGenre] = useState<Genre | 'all'>('all')
+  const [filteringSynopsis, setFilteringSynopsis] = useState(false)
 
   // All Films (TMDB discover or search)
   const [tmdbMovies, setTmdbMovies]       = useState<TMDBMovie[]>([])
@@ -181,16 +181,32 @@ export default function WatchlistPage() {
     isFetching.current = true
     setTmdbLoading(true)
     setIsSearchMode(false)
-    const movies = await discoverMovies({
-      genre: selectedGenre !== 'all' ? selectedGenre : undefined,
-      mood:  selectedMood  !== 'all' ? selectedMood  : undefined,
-      seed:  refreshSeed,
-      limit: 20,
-    })
-    setTmdbMovies(movies)
+
+    if (selectedMood !== 'all') {
+      // Use synopsis-based filter when a mood is selected
+      setFilteringSynopsis(true)
+      const movies = await getMoviesByMoodWithSynopsisFilter(selectedMood, 20, refreshSeed)
+      setFilteringSynopsis(false)
+      setTmdbMovies(movies)
+    } else {
+      const qs = new URLSearchParams({
+        endpoint:         'discover/movie',
+        include_adult:    'false',
+        include_video:    'false',
+        language:         'en-US',
+        sort_by:          'popularity.desc',
+        'vote_count.gte': '50',
+        'vote_average.gte': '5.5',
+        page:             String(((Math.floor((Date.now() / 86400000)) + refreshSeed) % 10) + 1),
+      })
+      const res   = await fetch(`/api/tmdb?${qs}`)
+      const json  = res.ok ? await res.json() : {}
+      setTmdbMovies((json.results ?? []).slice(0, 20))
+    }
+
     setTmdbLoading(false)
     isFetching.current = false
-  }, [selectedGenre, selectedMood, refreshSeed])
+  }, [selectedMood, refreshSeed])
 
   // ── TMDB search ──
   const runSearch = useCallback(async (q: string) => {
@@ -280,7 +296,6 @@ export default function WatchlistPage() {
 
   function clearFilters() {
     setSelectedMood('all')
-    setSelectedGenre('all')
     setSearchText('')
   }
 
@@ -291,8 +306,7 @@ export default function WatchlistPage() {
   })
 
   const activeFilters = [
-    selectedMood  !== 'all' && selectedMood,
-    selectedGenre !== 'all' && selectedGenre,
+    selectedMood !== 'all' && selectedMood,
   ].filter(Boolean) as string[]
 
   // ─── Render a single "All Films" row ──────────────────────────────────────
@@ -305,10 +319,9 @@ export default function WatchlistPage() {
     const inWl     = wIds.includes(id)
     const logged   = logMap[id] ?? null
     const isOpen   = openDrawer === id
-
     return (
       <div className="fade-up" style={{ animationDelay: `${idx * 0.03}s` }}>
-        <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
+        <div className="flex items-start gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
           <TMDBPoster url={poster} title={movie.title} />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
@@ -320,9 +333,11 @@ export default function WatchlistPage() {
               </div>
               <ScoreBadge score={score} />
             </div>
-            <p className="text-xs leading-relaxed mt-1.5 line-clamp-2" style={{ color: 'var(--silver-dim)' }}>
-              {movie.overview}
-            </p>
+            {movie.overview && (
+              <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--silver-dim)' }}>
+                {movie.overview}
+              </p>
+            )}
           </div>
 
           {/* Action buttons */}
@@ -384,10 +399,25 @@ export default function WatchlistPage() {
   function SavedRow({ row, idx }: { row: WatchlistRow; idx: number }) {
     const logged = logMap[row.movie_id] ?? null
     const isOpen = openDrawer === row.movie_id
+    const [synopsis, setSynopsis] = useState<string | null>(null)
+
+    useEffect(() => {
+      async function fetchSynopsis() {
+        try {
+          const qs = new URLSearchParams({ endpoint: `movie/${row.movie_id}`, language: 'en-US' })
+          const res = await fetch(`/api/tmdb?${qs}`)
+          const json = res.ok ? await res.json() : {}
+          setSynopsis(json.overview ?? '')
+        } catch {
+          setSynopsis('')
+        }
+      }
+      fetchSynopsis()
+    }, [row.movie_id])
 
     return (
       <div className="fade-up" style={{ animationDelay: `${idx * 0.03}s` }}>
-        <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
+        <div className="flex items-start gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
           <TMDBPoster url={row.poster_url} title={row.movie_name} />
           <div className="flex-1 min-w-0">
             <p className="font-display font-bold text-sm leading-tight truncate" style={{ color: 'var(--silver)' }}>
@@ -396,12 +426,16 @@ export default function WatchlistPage() {
             <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--silver-ghost)' }}>
               Saved {new Date(row.added_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </p>
-            {/* Show rating if logged */}
             {logged && (
               <p className="text-xs font-mono mt-1" style={{ color: 'var(--amber)', opacity: 0.7 }}>
                 ★ {logged.rating}/100 · {logged.mood}
               </p>
             )}
+            {synopsis === null ? (
+              <p className="text-xs font-mono italic mt-1.5" style={{ color: 'var(--silver-ghost)' }}>Loading synopsis…</p>
+            ) : synopsis ? (
+              <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--silver-dim)' }}>{synopsis}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-1.5 flex-shrink-0">
@@ -525,22 +559,6 @@ export default function WatchlistPage() {
                 </select>
               </div>
 
-              {/* Genre filter */}
-              <div className="relative">
-                <SlidersHorizontal size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--silver-ghost)' }} />
-                <select
-                  value={selectedGenre}
-                  onChange={e => setSelectedGenre(e.target.value as Genre | 'all')}
-                  className="cin-input pl-9 pr-7 py-2.5 rounded-lg text-sm appearance-none cursor-pointer"
-                  style={{ minWidth: 140 }}
-                >
-                  <option value="all">All Genres</option>
-                  {GENRES.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-
               {/* Refresh */}
               <button
                 onClick={() => setRefreshSeed(s => s + 1)}
@@ -597,7 +615,11 @@ export default function WatchlistPage() {
               <div className="w-6 h-6 rounded-full border-t-transparent animate-spin mx-auto"
                 style={{ border: '2px solid var(--amber)' }} />
               <p className="text-xs font-mono mt-4" style={{ color: 'var(--silver-ghost)' }}>
-                {isSearchMode ? `Searching for "${searchText}"…` : 'Fetching from TMDB…'}
+                {isSearchMode
+                  ? `Searching for "${searchText}"…`
+                  : filteringSynopsis
+                  ? 'Analysing synopses for your mood…'
+                  : 'Fetching from TMDB…'}
               </p>
             </div>
           ) : tmdbMovies.length === 0 ? (

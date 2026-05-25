@@ -3,7 +3,7 @@ import { useState } from 'react'
 import AppShell from '@/components/AppShell'
 import QuickLog from '@/components/QuickLog'
 import { MOODS, Mood } from '@/lib/data'
-import { getMoviesByMoodFromTMDB, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
+import { getMoviesForDetectedMood, getMoviesByMoodWithSynopsisFilter, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
 import { Sparkles, ChevronDown, ChevronUp, ImageOff, RefreshCw, AlertTriangle } from 'lucide-react'
 
 function TMDBMovieCard({ movie }: { movie: TMDBMovie }) {
@@ -14,32 +14,36 @@ function TMDBMovieCard({ movie }: { movie: TMDBMovie }) {
   const scoreColor = score < 50 ? '#e74c3c' : score < 65 ? '#d4a853' : score < 80 ? '#f0c060' : '#27ae60'
 
   return (
-    <div className="cin-card rounded-xl p-4 flex gap-3">
-      {poster && !imgErr ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={poster} alt={movie.title} onError={() => setImgErr(true)}
-          className="flex-shrink-0 rounded-lg object-cover"
-          style={{ width: 64, height: 92, border: '1px solid rgba(212,168,83,0.15)' }} />
-      ) : (
-        <div className="flex-shrink-0 rounded-lg flex items-center justify-center"
-          style={{ width: 64, height: 92, background: '#1c1c1c', border: '1px solid rgba(212,168,83,0.15)' }}>
-          <ImageOff size={18} style={{ color: 'rgba(212,168,83,0.3)' }} />
+    <div className="cin-card rounded-xl p-4 flex flex-col gap-3">
+      <div className="flex gap-3">
+        {poster && !imgErr ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={poster} alt={movie.title} onError={() => setImgErr(true)}
+            className="flex-shrink-0 rounded-lg object-cover"
+            style={{ width: 64, height: 92, border: '1px solid rgba(212,168,83,0.15)' }} />
+        ) : (
+          <div className="flex-shrink-0 rounded-lg flex items-center justify-center"
+            style={{ width: 64, height: 92, background: '#1c1c1c', border: '1px solid rgba(212,168,83,0.15)' }}>
+            <ImageOff size={18} style={{ color: 'rgba(212,168,83,0.3)' }} />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-display font-bold text-sm leading-tight" style={{ color: 'var(--silver)' }}>
+              {movie.title}
+            </h3>
+            <span className="flex-shrink-0 font-mono text-xs font-bold px-1.5 py-0.5 rounded"
+              style={{ background: `${scoreColor}18`, color: scoreColor, border: `1px solid ${scoreColor}30` }}>
+              {score}/100
+            </span>
+          </div>
+          {year && <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--silver-ghost)' }}>{year}</p>}
+          {movie.overview && (
+            <p className="text-xs leading-relaxed mt-2" style={{ color: 'var(--silver-dim)' }}>
+              {movie.overview}
+            </p>
+          )}
         </div>
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-display font-bold text-sm leading-tight" style={{ color: 'var(--silver)' }}>
-            {movie.title}
-          </h3>
-          <span className="flex-shrink-0 font-mono text-xs font-bold px-1.5 py-0.5 rounded"
-            style={{ background: `${scoreColor}18`, color: scoreColor, border: `1px solid ${scoreColor}30` }}>
-            {score}/100
-          </span>
-        </div>
-        {year && <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--silver-ghost)' }}>{year}</p>}
-        <p className="text-xs leading-relaxed mt-2 line-clamp-3" style={{ color: 'var(--silver-dim)' }}>
-          {movie.overview}
-        </p>
       </div>
     </div>
   )
@@ -53,14 +57,26 @@ export default function DashboardPage() {
   const [usedFallback, setUsedFallback]       = useState(false)
   const [recommendations, setRecommendations] = useState<TMDBMovie[]>([])
   const [analyzing, setAnalyzing]             = useState(false)
+  const [filteringBySynopsis, setFilteringBySynopsis] = useState(false)
   const [refreshing, setRefreshing]           = useState(false)
   const [refreshSeed, setRefreshSeed]         = useState(0)
   const [showQuickLog, setShowQuickLog]       = useState(false)
   const [error, setError]                     = useState<string | null>(null)
 
-  async function fetchRecs(mood: Mood, seed: number) {
-    const movies = await getMoviesByMoodFromTMDB(mood, 3, seed)
-    setRecommendations(movies)
+  async function fetchRecs(mood: Mood, seed: number, fromTyped = false) {
+    if (fromTyped) {
+      // Typed emotion path: use HF synopsis analysis
+      setFilteringBySynopsis(true)
+      const movies = await getMoviesForDetectedMood(mood, 3, seed)
+      setRecommendations(movies)
+      setFilteringBySynopsis(false)
+    } else {
+      // Mood palette path: also use synopsis filter
+      setFilteringBySynopsis(true)
+      const movies = await getMoviesByMoodWithSynopsisFilter(mood, 3, seed)
+      setRecommendations(movies)
+      setFilteringBySynopsis(false)
+    }
   }
 
   async function analyze() {
@@ -95,7 +111,7 @@ export default function DashboardPage() {
       setHfConfidence(Math.round(data.score * 100))
       setUsedFallback(data.fallback ?? false)
       setRefreshSeed(0)
-      await fetchRecs(mood, 0)
+      await fetchRecs(mood, 0, true)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
@@ -119,7 +135,7 @@ export default function DashboardPage() {
     setUsedFallback(false)
     setRefreshSeed(0)
     setRecommendations([])
-    getMoviesByMoodFromTMDB(mood, 3, 0).then(setRecommendations)
+    fetchRecs(mood, 0, false)
   }
 
   const moodData = detectedMood ? MOODS.find(m => m.value === detectedMood) : null
@@ -148,7 +164,7 @@ export default function DashboardPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) analyze() }}
-                placeholder="I'm feeling restless and nostalgic, like I want to cry a little but also feel hopeful..."
+                placeholder="I'm feeling really down and empty, like nothing could cheer me up right now..."
                 rows={4}
                 className="cin-input w-full px-4 py-3 rounded-lg text-sm resize-none mb-4"
               />
@@ -214,7 +230,9 @@ export default function DashboardPage() {
                     <div className="w-5 h-5 rounded-full border-t-transparent animate-spin mx-auto mb-3"
                       style={{ border: '2px solid var(--amber)' }} />
                     <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>
-                      Loading recommendations…
+                      {filteringBySynopsis
+                        ? 'Analysing synopses for your mood…'
+                        : 'Loading recommendations…'}
                     </p>
                   </div>
                 ) : recommendations.map((movie, i) => (

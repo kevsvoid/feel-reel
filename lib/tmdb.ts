@@ -38,17 +38,15 @@ export const GENRE_TO_TMDB_ID: Record<string, number> = {
 }
 
 // Mood → TMDB genre IDs (OR logic via pipe separator)
-// Use genre IDs that actually have good coverage on TMDB
+// Mapped from HuggingFace j-hartmann/emotion-english-distilroberta-base outputs
 const MOOD_TO_GENRE_IDS: Record<string, number[]> = {
-  happy:     [35, 10751, 16, 12],       // Comedy, Family, Animation, Adventure
-  sad:       [18, 10749, 10402],        // Drama, Romance, Music
-  anxious:   [53, 27, 9648, 28],        // Thriller, Horror, Mystery, Action
-  excited:   [28, 12, 878, 35],         // Action, Adventure, Sci-Fi, Comedy
-  nostalgic: [18, 10749, 36, 10402],    // Drama, Romance, History, Music
   angry:     [28, 53, 80, 18],          // Action, Thriller, Crime, Drama
-  romantic:  [10749, 35, 18, 10402],    // Romance, Comedy, Drama, Music
+  disgusted: [27, 53, 9648, 18],        // Horror, Thriller, Mystery, Drama
+  scared:    [27, 53, 9648, 878],       // Horror, Thriller, Mystery, Sci-Fi
+  happy:     [35, 10751, 16, 12],       // Comedy, Family, Animation, Adventure
   bored:     [12, 35, 878, 28],         // Adventure, Comedy, Sci-Fi, Action
-  inspired:  [18, 28, 12, 36, 878],     // Drama, Action, Adventure, History, Sci-Fi
+  sad:       [18, 10749, 10402],        // Drama, Romance, Music
+  shocked:   [878, 9648, 53, 28],       // Sci-Fi, Mystery, Thriller, Action
 }
 
 // ─── Core fetch via proxy ─────────────────────────────────────────────────────
@@ -141,4 +139,102 @@ export async function getMoviesByMoodFromTMDB(
   const daySeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate() + seed
   const shuffled = [...movies].sort((a, b) => ((a.id * daySeed) % 97) - ((b.id * daySeed) % 97))
   return shuffled.slice(0, limit)
+}
+
+// ─── Synopsis-based mood filtering ───────────────────────────────────────────
+
+interface FilterResult {
+  id:       number
+  matched:  boolean
+  topLabel: string
+  score:    number
+}
+
+/**
+ * Hit /api/emotion-filter to score each movie's overview against the mood.
+ * Returns the matched movie IDs in order of their original list.
+ */
+async function filterBySynopsis(
+  movies: TMDBMovie[],
+  mood: string
+): Promise<TMDBMovie[]> {
+  if (movies.length === 0) return []
+
+  try {
+    const res = await fetch('/api/emotion-filter', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        mood,
+        movies: movies.map(m => ({ id: m.id, overview: m.overview })),
+      }),
+    })
+
+    if (!res.ok) {
+      // Fail open — return all movies on API error
+      console.error('emotion-filter API error:', res.status)
+      return movies
+    }
+
+    const { results }: { results: FilterResult[] } = await res.json()
+    const matchedIds = new Set(
+      results.filter(r => r.matched).map(r => r.id)
+    )
+
+    // Preserve original order, keep matched (or those with no overview)
+    return movies.filter(m => matchedIds.has(m.id))
+  } catch (e) {
+    console.error('filterBySynopsis threw:', e)
+    return movies // fail open
+  }
+}
+
+/**
+ * Fetch movies from TMDB (genre-based) then re-rank by synopsis emotion.
+ * Used for: mood palette picks + watchlist mood filter.
+ *
+ * Fetches a larger pool (limit * 4, min 20) from TMDB, runs HF on the
+ * overviews, keeps only those whose synopsis matches the mood, then returns
+ * up to `limit` results. Falls back to the unfiltered pool if HF yields
+ * too few matches.
+ */
+export async function getMoviesByMoodWithSynopsisFilter(
+  mood: string,
+  limit = 20,
+  seed = 0
+): Promise<TMDBMovie[]> {
+  const poolSize = Math.max(limit * 4, 40)
+  const pool = await discoverMovies({ mood, seed, limit: poolSize })
+
+  if (!mood || mood === 'all') return pool.slice(0, limit)
+
+  const filtered = await filterBySynopsis(pool, mood)
+
+  // If HF filtered everything out, fall back to the genre-based pool
+  if (filtered.length < Math.ceil(limit / 2)) {
+    return pool.slice(0, limit)
+  }
+  return filtered.slice(0, limit)
+}
+
+/**
+ * Typed-emotion flow for dashboard: fetch a pool, score synopses, return top N.
+ * Fetches more results than needed so HF filtering has candidates to work with.
+ */
+export async function getMoviesForDetectedMood(
+  mood: string,
+  limit = 3,
+  seed = 0
+): Promise<TMDBMovie[]> {
+  // Pull a larger pool first so HF has candidates to filter
+  const pool = await discoverMovies({ mood, seed, limit: 40 })
+
+  const today   = new Date()
+  const daySeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate() + seed
+  const shuffled = [...pool].sort((a, b) => ((a.id * daySeed) % 97) - ((b.id * daySeed) % 97))
+
+  const filtered = await filterBySynopsis(shuffled, mood)
+  const result   = filtered.length > 0 ? filtered : shuffled
+
+  return result.slice(0, limit)
 }

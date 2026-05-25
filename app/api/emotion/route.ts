@@ -11,13 +11,13 @@ const HF_MODEL = 'j-hartmann/emotion-english-distilroberta-base'
 const HF_URL = `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`
 
 const HF_TO_MOOD: Record<string, string> = {
-  joy:      'happy',
-  sadness:  'sad',
   anger:    'angry',
-  fear:     'anxious',
-  disgust:  'bored',
-  surprise: 'excited',
+  disgust:  'disgusted',
+  fear:     'scared',
+  joy:      'happy',
   neutral:  'bored',
+  sadness:  'sad',
+  surprise: 'shocked',
 }
 
 export async function POST(req: NextRequest) {
