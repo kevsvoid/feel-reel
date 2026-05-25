@@ -2,9 +2,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import AppShell from '@/components/AppShell'
 import RatingSlider from '@/components/RatingSlider'
-import { MOODS, GENRES, Mood, Genre } from '@/lib/data'
+import { MOODS, Mood } from '@/lib/data'
 import { getLogs, addLog, updateLog, LogEntry } from '@/lib/data'
-import { discoverMovies, searchMovies, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
+import { getMoviesByMoodWithSynopsisFilter, searchMovies, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
 import { Search, BookmarkX, SlidersHorizontal, X, RefreshCw, ImageOff, PenLine, CheckCircle2, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -144,7 +144,7 @@ export default function WatchlistPage() {
   const [tab, setTab]                     = useState<Tab>('all')
   const [searchText, setSearchText]       = useState('')
   const [selectedMood, setSelectedMood]   = useState<Mood | 'all'>('all')
-  const [selectedGenre, setSelectedGenre] = useState<Genre | 'all'>('all')
+  const [filteringSynopsis, setFilteringSynopsis] = useState(false)
 
   // All Films (TMDB discover or search)
   const [tmdbMovies, setTmdbMovies]       = useState<TMDBMovie[]>([])
@@ -181,16 +181,32 @@ export default function WatchlistPage() {
     isFetching.current = true
     setTmdbLoading(true)
     setIsSearchMode(false)
-    const movies = await discoverMovies({
-      genre: selectedGenre !== 'all' ? selectedGenre : undefined,
-      mood:  selectedMood  !== 'all' ? selectedMood  : undefined,
-      seed:  refreshSeed,
-      limit: 20,
-    })
-    setTmdbMovies(movies)
+
+    if (selectedMood !== 'all') {
+      // Use synopsis-based filter when a mood is selected
+      setFilteringSynopsis(true)
+      const movies = await getMoviesByMoodWithSynopsisFilter(selectedMood, 20, refreshSeed)
+      setFilteringSynopsis(false)
+      setTmdbMovies(movies)
+    } else {
+      const qs = new URLSearchParams({
+        endpoint:         'discover/movie',
+        include_adult:    'false',
+        include_video:    'false',
+        language:         'en-US',
+        sort_by:          'popularity.desc',
+        'vote_count.gte': '50',
+        'vote_average.gte': '5.5',
+        page:             String(((Math.floor((Date.now() / 86400000)) + refreshSeed) % 10) + 1),
+      })
+      const res   = await fetch(`/api/tmdb?${qs}`)
+      const json  = res.ok ? await res.json() : {}
+      setTmdbMovies((json.results ?? []).slice(0, 20))
+    }
+
     setTmdbLoading(false)
     isFetching.current = false
-  }, [selectedGenre, selectedMood, refreshSeed])
+  }, [selectedMood, refreshSeed])
 
   // ── TMDB search ──
   const runSearch = useCallback(async (q: string) => {
@@ -280,7 +296,6 @@ export default function WatchlistPage() {
 
   function clearFilters() {
     setSelectedMood('all')
-    setSelectedGenre('all')
     setSearchText('')
   }
 
@@ -291,8 +306,7 @@ export default function WatchlistPage() {
   })
 
   const activeFilters = [
-    selectedMood  !== 'all' && selectedMood,
-    selectedGenre !== 'all' && selectedGenre,
+    selectedMood !== 'all' && selectedMood,
   ].filter(Boolean) as string[]
 
   // ─── Render a single "All Films" row ──────────────────────────────────────
@@ -525,22 +539,6 @@ export default function WatchlistPage() {
                 </select>
               </div>
 
-              {/* Genre filter */}
-              <div className="relative">
-                <SlidersHorizontal size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--silver-ghost)' }} />
-                <select
-                  value={selectedGenre}
-                  onChange={e => setSelectedGenre(e.target.value as Genre | 'all')}
-                  className="cin-input pl-9 pr-7 py-2.5 rounded-lg text-sm appearance-none cursor-pointer"
-                  style={{ minWidth: 140 }}
-                >
-                  <option value="all">All Genres</option>
-                  {GENRES.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-
               {/* Refresh */}
               <button
                 onClick={() => setRefreshSeed(s => s + 1)}
@@ -597,7 +595,11 @@ export default function WatchlistPage() {
               <div className="w-6 h-6 rounded-full border-t-transparent animate-spin mx-auto"
                 style={{ border: '2px solid var(--amber)' }} />
               <p className="text-xs font-mono mt-4" style={{ color: 'var(--silver-ghost)' }}>
-                {isSearchMode ? `Searching for "${searchText}"…` : 'Fetching from TMDB…'}
+                {isSearchMode
+                  ? `Searching for "${searchText}"…`
+                  : filteringSynopsis
+                  ? 'Analysing synopses for your mood…'
+                  : 'Fetching from TMDB…'}
               </p>
             </div>
           ) : tmdbMovies.length === 0 ? (

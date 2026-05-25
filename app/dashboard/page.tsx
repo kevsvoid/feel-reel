@@ -3,7 +3,7 @@ import { useState } from 'react'
 import AppShell from '@/components/AppShell'
 import QuickLog from '@/components/QuickLog'
 import { MOODS, Mood } from '@/lib/data'
-import { getMoviesByMoodFromTMDB, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
+import { getMoviesForDetectedMood, getMoviesByMoodWithSynopsisFilter, getPosterUrl, tmdbRatingTo100, TMDBMovie } from '@/lib/tmdb'
 import { Sparkles, ChevronDown, ChevronUp, ImageOff, RefreshCw, AlertTriangle } from 'lucide-react'
 
 function TMDBMovieCard({ movie }: { movie: TMDBMovie }) {
@@ -53,14 +53,26 @@ export default function DashboardPage() {
   const [usedFallback, setUsedFallback]       = useState(false)
   const [recommendations, setRecommendations] = useState<TMDBMovie[]>([])
   const [analyzing, setAnalyzing]             = useState(false)
+  const [filteringBySynopsis, setFilteringBySynopsis] = useState(false)
   const [refreshing, setRefreshing]           = useState(false)
   const [refreshSeed, setRefreshSeed]         = useState(0)
   const [showQuickLog, setShowQuickLog]       = useState(false)
   const [error, setError]                     = useState<string | null>(null)
 
-  async function fetchRecs(mood: Mood, seed: number) {
-    const movies = await getMoviesByMoodFromTMDB(mood, 3, seed)
-    setRecommendations(movies)
+  async function fetchRecs(mood: Mood, seed: number, fromTyped = false) {
+    if (fromTyped) {
+      // Typed emotion path: use HF synopsis analysis
+      setFilteringBySynopsis(true)
+      const movies = await getMoviesForDetectedMood(mood, 3, seed)
+      setRecommendations(movies)
+      setFilteringBySynopsis(false)
+    } else {
+      // Mood palette path: also use synopsis filter
+      setFilteringBySynopsis(true)
+      const movies = await getMoviesByMoodWithSynopsisFilter(mood, 3, seed)
+      setRecommendations(movies)
+      setFilteringBySynopsis(false)
+    }
   }
 
   async function analyze() {
@@ -95,7 +107,7 @@ export default function DashboardPage() {
       setHfConfidence(Math.round(data.score * 100))
       setUsedFallback(data.fallback ?? false)
       setRefreshSeed(0)
-      await fetchRecs(mood, 0)
+      await fetchRecs(mood, 0, true)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
@@ -119,7 +131,7 @@ export default function DashboardPage() {
     setUsedFallback(false)
     setRefreshSeed(0)
     setRecommendations([])
-    getMoviesByMoodFromTMDB(mood, 3, 0).then(setRecommendations)
+    fetchRecs(mood, 0, false)
   }
 
   const moodData = detectedMood ? MOODS.find(m => m.value === detectedMood) : null
@@ -214,7 +226,9 @@ export default function DashboardPage() {
                     <div className="w-5 h-5 rounded-full border-t-transparent animate-spin mx-auto mb-3"
                       style={{ border: '2px solid var(--amber)' }} />
                     <p className="text-xs font-mono" style={{ color: 'var(--silver-ghost)' }}>
-                      Loading recommendations…
+                      {filteringBySynopsis
+                        ? 'Analysing synopses for your mood…'
+                        : 'Loading recommendations…'}
                     </p>
                   </div>
                 ) : recommendations.map((movie, i) => (
