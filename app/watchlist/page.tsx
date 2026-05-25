@@ -319,10 +319,9 @@ export default function WatchlistPage() {
     const inWl     = wIds.includes(id)
     const logged   = logMap[id] ?? null
     const isOpen   = openDrawer === id
-
     return (
       <div className="fade-up" style={{ animationDelay: `${idx * 0.03}s` }}>
-        <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
+        <div className="flex items-start gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
           <TMDBPoster url={poster} title={movie.title} />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
@@ -334,9 +333,11 @@ export default function WatchlistPage() {
               </div>
               <ScoreBadge score={score} />
             </div>
-            <p className="text-xs leading-relaxed mt-1.5 line-clamp-2" style={{ color: 'var(--silver-dim)' }}>
-              {movie.overview}
-            </p>
+            {movie.overview && (
+              <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--silver-dim)' }}>
+                {movie.overview}
+              </p>
+            )}
           </div>
 
           {/* Action buttons */}
@@ -398,10 +399,25 @@ export default function WatchlistPage() {
   function SavedRow({ row, idx }: { row: WatchlistRow; idx: number }) {
     const logged = logMap[row.movie_id] ?? null
     const isOpen = openDrawer === row.movie_id
+    const [synopsis, setSynopsis] = useState<string | null>(null)
+
+    useEffect(() => {
+      async function fetchSynopsis() {
+        try {
+          const qs = new URLSearchParams({ endpoint: `movie/${row.movie_id}`, language: 'en-US' })
+          const res = await fetch(`/api/tmdb?${qs}`)
+          const json = res.ok ? await res.json() : {}
+          setSynopsis(json.overview ?? '')
+        } catch {
+          setSynopsis('')
+        }
+      }
+      fetchSynopsis()
+    }, [row.movie_id])
 
     return (
       <div className="fade-up" style={{ animationDelay: `${idx * 0.03}s` }}>
-        <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
+        <div className="flex items-start gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors group">
           <TMDBPoster url={row.poster_url} title={row.movie_name} />
           <div className="flex-1 min-w-0">
             <p className="font-display font-bold text-sm leading-tight truncate" style={{ color: 'var(--silver)' }}>
@@ -410,12 +426,16 @@ export default function WatchlistPage() {
             <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--silver-ghost)' }}>
               Saved {new Date(row.added_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </p>
-            {/* Show rating if logged */}
             {logged && (
               <p className="text-xs font-mono mt-1" style={{ color: 'var(--amber)', opacity: 0.7 }}>
                 ★ {logged.rating}/100 · {logged.mood}
               </p>
             )}
+            {synopsis === null ? (
+              <p className="text-xs font-mono italic mt-1.5" style={{ color: 'var(--silver-ghost)' }}>Loading synopsis…</p>
+            ) : synopsis ? (
+              <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--silver-dim)' }}>{synopsis}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-1.5 flex-shrink-0">
