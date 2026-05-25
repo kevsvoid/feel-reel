@@ -38,17 +38,15 @@ export const GENRE_TO_TMDB_ID: Record<string, number> = {
 }
 
 // Mood → TMDB genre IDs (OR logic via pipe separator)
-// Use genre IDs that actually have good coverage on TMDB
+// Mapped from HuggingFace j-hartmann/emotion-english-distilroberta-base outputs
 const MOOD_TO_GENRE_IDS: Record<string, number[]> = {
-  happy:     [35, 10751, 16, 12],       // Comedy, Family, Animation, Adventure
-  sad:       [18, 10749, 10402],        // Drama, Romance, Music
-  anxious:   [53, 27, 9648, 28],        // Thriller, Horror, Mystery, Action
-  excited:   [28, 12, 878, 35],         // Action, Adventure, Sci-Fi, Comedy
-  nostalgic: [18, 10749, 36, 10402],    // Drama, Romance, History, Music
   angry:     [28, 53, 80, 18],          // Action, Thriller, Crime, Drama
-  romantic:  [10749, 35, 18, 10402],    // Romance, Comedy, Drama, Music
+  disgusted: [27, 53, 9648, 18],        // Horror, Thriller, Mystery, Drama
+  scared:    [27, 53, 9648, 878],       // Horror, Thriller, Mystery, Sci-Fi
+  happy:     [35, 10751, 16, 12],       // Comedy, Family, Animation, Adventure
   bored:     [12, 35, 878, 28],         // Adventure, Comedy, Sci-Fi, Action
-  inspired:  [18, 28, 12, 36, 878],     // Drama, Action, Adventure, History, Sci-Fi
+  sad:       [18, 10749, 10402],        // Drama, Romance, Music
+  shocked:   [878, 9648, 53, 28],       // Sci-Fi, Mystery, Thriller, Action
 }
 
 // ─── Core fetch via proxy ─────────────────────────────────────────────────────

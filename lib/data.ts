@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Mood = 'happy' | 'sad' | 'anxious' | 'excited' | 'nostalgic' | 'angry' | 'romantic' | 'bored' | 'inspired'
+export type Mood = 'angry' | 'disgusted' | 'scared' | 'happy' | 'bored' | 'sad' | 'shocked'
 
 export interface LogEntry {
   id: string
@@ -23,15 +23,13 @@ export const GENRES = [
 export type Genre = typeof GENRES[number]
 
 export const MOODS: { value: Mood; label: string; emoji: string; color: string }[] = [
-  { value: 'happy',     label: 'Happy',     emoji: '☀️',  color: '#d4a853' },
-  { value: 'sad',       label: 'Sad',       emoji: '🌧️',  color: '#4a7fa5' },
-  { value: 'anxious',   label: 'Anxious',   emoji: '⚡',  color: '#9b59b6' },
-  { value: 'excited',   label: 'Excited',   emoji: '🔥',  color: '#e74c3c' },
-  { value: 'nostalgic', label: 'Nostalgic', emoji: '🎞️',  color: '#a0856c' },
-  { value: 'angry',     label: 'Angry',     emoji: '🌋',  color: '#c0392b' },
-  { value: 'romantic',  label: 'Romantic',  emoji: '🌹',  color: '#e91e8c' },
-  { value: 'bored',     label: 'Bored',     emoji: '🌀',  color: '#607d8b' },
-  { value: 'inspired',  label: 'Inspired',  emoji: '✨',  color: '#27ae60' },
+  { value: 'angry',     label: 'Angry',     emoji: '🤬',  color: '#c0392b' },
+  { value: 'disgusted', label: 'Disgusted', emoji: '🤢',  color: '#27ae60' },
+  { value: 'scared',    label: 'Scared',    emoji: '😨',  color: '#9b59b6' },
+  { value: 'happy',     label: 'Happy',     emoji: '😀',  color: '#d4a853' },
+  { value: 'bored',     label: 'Bored',     emoji: '😐',  color: '#607d8b' },
+  { value: 'sad',       label: 'Sad',       emoji: '😭',  color: '#4a7fa5' },
+  { value: 'shocked',   label: 'Shocked',   emoji: '😲',  color: '#e67e22' },
 ]
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
